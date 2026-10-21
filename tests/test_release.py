@@ -123,3 +123,30 @@ def test_recover_does_not_clear_an_active_lock(client, cfg):
         with pytest.raises(PipelineBusy):
             recover(client, cfg)
         assert lock_exists(client, cfg.database)
+
+
+@pytest.mark.parametrize("point", ["after_health", "after_cleanup", "after_rename", "after_published", "before_unlock"])
+@pytest.mark.parametrize("first", [True, False])
+def test_finalisation_recovery_is_idempotent(client, cfg, source, other_source, point, first):
+    from release_pipeline.release import lock_exists
+    if not first:
+        run_release(client, source, *span(source), cfg)
+    with pytest.raises(SimulatedCrash):
+        run_release(client, other_source, *span(other_source), cfg, fail_at=point)
+    assert lock_exists(client, cfg.database)
+    before = totals(client, cfg)
+    rid = recover(client, cfg, writer_stopped=True)
+    assert rid and check(client, cfg)["ok"]
+    assert totals(client, cfg) == before
+    assert recover(client, cfg) is None
+    assert client.query(f"SELECT count() FROM `{cfg.database}`.release_health WHERE release_id = {{r:String}}",parameters={"r":rid}).result_rows[0][0] == 1
+    assert sum(e == "published" for _, e, _ in journal_events(client,cfg.database,rid)) == 1
+
+
+def test_completed_release_plan_cannot_clear_another_writer(client, cfg, source):
+    from release_pipeline.release import lock_exists
+    run_release(client, source, *span(source), cfg)
+    with PipelineLock(client, cfg.database, "different_writer"):
+        with pytest.raises(PipelineBusy):
+            recover(client, cfg, writer_stopped=True)
+        assert lock_exists(client, cfg.database)

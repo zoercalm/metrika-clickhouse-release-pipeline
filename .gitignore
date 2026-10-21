@@ -8,3 +8,5 @@ dbt/logs/
 *.log
 
 .DS_Store
+
+dbt/.user.yml

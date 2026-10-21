@@ -35,11 +35,11 @@
   <path class="l" d="M464 225H194"/>
 
   <rect class="box" x="24" y="310" width="170" height="70" rx="10"/>
-  <text x="40" y="340" class="t">Dashboard reads</text><text x="40" y="362" class="s">whole old or whole new</text>
+  <text x="40" y="340" class="t">Dashboard reads mart</text><text x="40" y="362" class="s">one old or new mart</text>
   <path class="l" d="M109 260V310"/>
 
   <rect class="box" x="244" y="310" width="200" height="70" rx="10"/>
-  <text x="260" y="340" class="t">prev_&lt;id&gt; database</text><text x="260" y="362" class="s">kept for rollback</text>
+  <text x="260" y="340" class="t">prev_&lt;id&gt; database</text><text x="260" y="362" class="s">experimental rollback only</text>
   <path class="d" d="M194 225C230 280 240 300 244 330"/>
 
   <rect class="box" x="494" y="310" width="210" height="70" rx="10"/>

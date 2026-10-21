@@ -1,8 +1,8 @@
-# Metrika → ClickHouse: whole-release publishing
+# Metrika → ClickHouse: tested mart publishing
 
-A small, runnable pattern for publishing analytics data so a dashboard **never sees half a
-load**. New data is built and tested in a separate database, journaled, and only then
-switched in. If the switch is interrupted, recovery finishes it without swapping anything back.
+Build and test a complete analytics mart before replacing the table a dashboard reads. A query against that single mart sees the old or new table. **This is not an atomic switch of all raw tables**: joins across raw visits/hits can see mixed versions while the three tables are switched. The first publish has no previous mart.
+
+Synthetic engineering demo, not a production release manager. Interrupted switches and finalisation are journaled and recoverable after stopping the writer.
 
 Everything here runs on **synthetic data**: a stand-in for the Yandex Metrika Logs API and
 Reporting API generates visits and hits. No client code, data, counters or domains are included.
@@ -18,6 +18,20 @@ Reporting API generates visits and hits. No client code, data, counters or domai
 - A test that checks the mart against raw data built with the same join will happily
   report "0 gaps" for data that never arrived.
 
+## Example outcome
+The deterministic integration scenario starts with **250 synthetic visits** (five days × 50). The following are executable assertions in `tests/test_release.py`:
+
+| Action | Visible result |
+|---|---|
+| Publish the baseline | 250 visits; health OK |
+| Add a duplicate visit and publish | dbt rejects the build; the old totals remain unchanged |
+| Interrupt switch after table 2 | lock held; new writer rejected; health not OK |
+| Stop the writer and recover | mart pageviews match raw pageview hits; health OK |
+| Recover again | no pending release; totals unchanged |
+| Interrupt after `published`, then recover | owning release finishes cleanup/unlock; no duplicate health snapshot |
+
+The last case prevents a finished-looking journal entry from leaving the pipeline permanently locked.
+
 ## Try it
 
 Requirements: Docker, Python 3.10+.
@@ -25,7 +39,8 @@ Requirements: Docker, Python 3.10+.
 ```bash
 make install        # virtualenv + dependencies (includes dbt-clickhouse)
 make demo           # start ClickHouse, publish a release, reconcile, check health
-make test           # 12 tests against a real ClickHouse
+make test           # integration tests against a real ClickHouse
+make down           # remove the disposable ClickHouse container and data volume
 ```
 
 Scenarios to run by hand (`.venv/bin/rp --help`):
@@ -35,7 +50,7 @@ Scenarios to run by hand (`.venv/bin/rp --help`):
 | `rp release` | Stage → full build → dbt build + tests → journal → switch |
 | `rp release --duplicate-visit` | A bad feed is rejected by dbt tests; production is untouched |
 | `rp release --crash-after 2` then `rp health` then `rp recover --writer-stopped` | An interrupted switch holds the lock; recovery compares UUIDs and finishes only the missing step |
-| `rp rollback` | Switch back to the previous release kept in `prev_<id>` |
+
 | `rp release --lose-hits 3` then `rp reconcile` then `rp repair` | A short export is caught against external totals and reloaded through the same gate |
 | `rp health` | Freshness and lock check; exit code 1 when stale (limit 26 h by default) |
 
@@ -47,7 +62,7 @@ Scenarios to run by hand (`.venv/bin/rp --help`):
 4. Run `dbt build` against the build database: the mart and 17 dbt tests. Failure = stop, drop, publish nothing.
 5. Journal the plan: table, old UUID, new UUID.
 6. Switch `visits`, `hits`, then the mart (`EXCHANGE TABLES`; the first release uses `RENAME`).
-7. Write the health snapshot; keep the previous version as `prev_<id>`; release the lock.
+7. Write the health snapshot; keep the previous version as `prev_<id>`; journal publication; release the owned lock. Each finalisation step can be resumed.
 
 Details and the reasoning are in [docs/design-decisions.md](docs/design-decisions.md).
 
@@ -80,15 +95,13 @@ tests/                  pytest suite (real ClickHouse)
 docs/                   architecture and design decisions
 ```
 
-## Related
+## Adaptation
+I would connect a real source adapter, establish retention and permissions, and test failure modes in the target deployment before scheduling this pattern. Readers must use the completed mart rather than join independently switched raw tables.
 
-This pattern comes from a real engagement. The case study (anonymised) is on my
-[Upwork profile](https://www.upwork.com/freelancers/~014d4b1d7430018c18) and at
-[omdigital.net](https://omdigital.net). I am Serhii Yashchuk, a marketing data engineer.
+## Experimental rollback
+`rp rollback` demonstrates a successful reverse switch only. It is **not crash-safe**, and the health snapshot still describes the latest publication rather than the rollback. Use only in a disposable demo; it is not part of the supported recovery guarantee. Recreate the demo database after exploring it.
 
-MIT licensed.
+## Recovery boundaries
+Stop the original writer before `rp recover --writer-stopped`, and run only one recovery process. Recovery refuses to clear a lock without its own prepared plan. Finalisation is repeatable after health insertion, previous-version cleanup, database rename, published journaling and before unlocking. The same cases are tested for first and subsequent publication. A crash before a prepared plan still requires manual inspection; this demo deliberately does not guess whether the writer is alive.
 
-## Operational limits of this demo
-Stop the original writer before using `rp recover --writer-stopped`. Recovery refuses to clear a lock with no prepared plan. A complete mart query sees an old or new mart; reads joining raw tables during the multi-table switch can see mixed versions. First publication has no previous mart.
-
-Rollback currently demonstrates a successful reverse switch only; it is not crash-safe and the health snapshot continues to describe the latest publish, not the rollback. Finalisation interruptions outside the three injected switch points are not covered. Do not deploy this teaching implementation as a production release manager.
+[CI checks](https://github.com/zoercalm/metrika-clickhouse-release-pipeline/actions/workflows/ci.yml). MIT licensed.

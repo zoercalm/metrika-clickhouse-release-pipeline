@@ -1,4 +1,4 @@
-"""Whole-release publishing.
+"""Publishing a prebuilt mart with journaled raw-table switches.
 
 New data never lands on the tables a dashboard reads. A release is:
 
@@ -79,18 +79,21 @@ def journal_events(client, db: str, release_id: str | None = None):
 class PipelineLock:
     """Exclusive table name. Creation succeeds for exactly one writer."""
 
-    def __init__(self, client, db: str):
+    def __init__(self, client, db: str, release_id: str = ""):
         self.client, self.db = client, db
+        self.release_id = release_id
         self.name = f"{ident(db)}.{ident(LOCK_TABLE)}"
         self.keep = False
 
     def __enter__(self):
         try:
-            self.client.command(f"CREATE TABLE {self.name} (unused UInt8) ENGINE = TinyLog")
+            self.client.command(f"CREATE TABLE {self.name} (release_id String) ENGINE = TinyLog")
         except Exception as exc:
             if "already exists" in str(exc).lower() or "TABLE_ALREADY_EXISTS" in str(exc):
                 raise PipelineBusy("another writer holds the lock (or a publish was interrupted)") from exc
             raise
+        if self.release_id:
+            self.client.insert(f"{self.db}.{LOCK_TABLE}", [[self.release_id]], column_names=["release_id"])
         return self
 
     def __exit__(self, *exc):
@@ -145,36 +148,53 @@ def _insert(client, db: str, table: str, rows) -> None:
         client.insert(f"{db}.{table}", rows)
 
 
-def _finish(client, cfg: Config, release_id: str, build: str, recovered: bool = False) -> None:
+def _fault(point: str, selected: str | None) -> None:
+    if point == selected:
+        raise SimulatedCrash(f"simulated crash {point}")
+
+
+def _database_exists(client, name: str) -> bool:
+    return bool(client.query("SELECT count() FROM system.databases WHERE name = {n:String}",
+                             parameters={"n": name}).result_rows[0][0])
+
+
+def _finish(client, cfg: Config, release_id: str, build: str, recovered: bool = False,
+            fail_at: str | None = None) -> None:
     db = cfg.database
-    # The server clock stamps the snapshot, so the freshness check never mixes time zones.
-    client.command(
-        f"INSERT INTO {ident(db)}.release_health "
-        f"SELECT {{r:String}}, now(), (SELECT count() FROM {ident(db)}.visits), "
-        f"(SELECT count() FROM {ident(db)}.hits), (SELECT max(date) FROM {ident(db)}.visits), 'published'",
-        parameters={"r": release_id},
-    )
-    journal(client, db, release_id, "published", {"recovered": recovered})
-    # The build database now holds the previous versions: keep exactly one for rollback.
+    # Each durable step is safe to repeat after a lost acknowledgement.
+    if not client.query(f"SELECT count() FROM {ident(db)}.release_health WHERE release_id = {{r:String}}",
+                        parameters={"r": release_id}).result_rows[0][0]:
+        client.command(
+            f"INSERT INTO {ident(db)}.release_health "
+            f"SELECT {{r:String}}, now(), (SELECT count() FROM {ident(db)}.visits), "
+            f"(SELECT count() FROM {ident(db)}.hits), (SELECT max(date) FROM {ident(db)}.visits), 'published'",
+            parameters={"r": release_id},
+        )
+    _fault("after_health", fail_at)
     for other in {r for r, e, _ in journal_events(client, db) if e == "prepared"} - {release_id}:
         _drop_db(client, "prev_" + other)
-    if client.query(
-        "SELECT count() FROM system.tables WHERE database = {d:String}", parameters={"d": build}
-    ).result_rows[0][0]:
-        client.command(f"RENAME DATABASE {ident(build)} TO {ident('prev_' + release_id)}")
-    else:
-        _drop_db(client, build)  # first release: nothing to roll back to
+    _fault("after_cleanup", fail_at)
+    if _database_exists(client, build):
+        if client.query("SELECT count() FROM system.tables WHERE database = {d:String}",
+                        parameters={"d": build}).result_rows[0][0]:
+            client.command(f"RENAME DATABASE {ident(build)} TO {ident('prev_' + release_id)}")
+        else:
+            _drop_db(client, build)
+    _fault("after_rename", fail_at)
+    if not any(e == "published" for _, e, _ in journal_events(client, db, release_id)):
+        journal(client, db, release_id, "published", {"recovered": recovered})
+    _fault("after_published", fail_at)
 
 
 def run_release(client, source, d_from: date, d_to: date, cfg: Config | None = None,
-                *, fail_after_step: int | None = None) -> str:
+                *, fail_after_step: int | None = None, fail_at: str | None = None) -> str:
     cfg = cfg or Config()
     db = cfg.database
     ensure_schema(client, db)
     rid = uuid.uuid4().hex[:12]
     stage, build = f"stage_{rid}", f"build_{rid}"
 
-    with PipelineLock(client, db) as lock:
+    with PipelineLock(client, db, rid) as lock:
         journal(client, db, rid, "started", {"from": str(d_from), "to": str(d_to)})
         try:
             # 1. stage the new range
@@ -216,7 +236,8 @@ def run_release(client, source, d_from: date, d_to: date, cfg: Config | None = N
             journal(client, db, rid, "exchanged", {"table": step["table"], "step": i})
             if fail_after_step == i:
                 raise SimulatedCrash(f"simulated crash after step {i}")
-        _finish(client, cfg, rid, build)
+        _finish(client, cfg, rid, build, fail_at=fail_at)
+        _fault("before_unlock", fail_at)
         lock.keep = False
     return rid
 
@@ -238,6 +259,13 @@ def _open_release(client, db: str):
             plans[rid] = detail
         elif event in ("published", "rejected", "rolled_back", "aborted"):
             done.add(rid)
+    # A published release may still own the lock after finalisation crashed.
+    # Never use an old plan to clear an unrelated writer's lock.
+    if lock_exists(client, db):
+        owner = client.query(f"SELECT release_id FROM {ident(db)}.{ident(LOCK_TABLE)}").result_rows
+        if owner and owner[0][0] in plans:
+            rid = owner[0][0]
+            return rid, plans[rid]
     pending = [r for r in plans if r not in done]
     return (pending[-1], plans[pending[-1]]) if pending else (None, None)
 

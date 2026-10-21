@@ -1,10 +1,9 @@
 # Design decisions
 
-## 1. Publish whole releases, not partial loads
+## 1. Publish a complete mart
 
 A scheduled job that finishes is not enough: a report can read half a night of data
-(new visits next to old hits). So data is never written onto the tables a dashboard
-reads. Each release is built in its own database, tested with dbt, and only then switched.
+(new visits next to old hits). The dashboard must read the single completed mart. Raw tables switch individually and are not a consistent multi-table snapshot. Each release is built in its own database, tested with dbt, and only then switched.
 
 ## 2. The switch is not a transaction, so it is journaled
 
@@ -13,7 +12,7 @@ mart takes three statements. The journal records, before anything is touched:
 
     table | old uuid | new uuid
 
-If the process dies half-way, `rp recover` reads the plan and compares the **current UUID**
+If the process dies half-way, `rp recover --writer-stopped` reads the plan and compares the **current UUID**
 of each public table: equal to `new_uuid` means the step is done, equal to `old_uuid` means
 it is missing, anything else stops with `PublicationUncertain`. A blind retry of an
 `EXCHANGE` would swap a finished step back, which is why recovery never retries blindly.
@@ -40,3 +39,6 @@ subnet with 20+ short single-page visits by new users. A missing subnet is never
 
 `rp health` reads only the health snapshot written after each publish, plus the lock. It can
 run from a different machine or scheduler than the pipeline itself.
+
+## 7. Repeatable finalisation
+The lock records its release ID. A published entry does not make an owned lock unrecoverable: recovery can locate that same plan, verify the switched UUIDs and repeat finalisation. Health insertion and publication journaling check for existing records; database rename is skipped if already completed. No unrelated writer lock is removed. Recovery is a single-operator action after the original writer has stopped, not a distributed lease service.
