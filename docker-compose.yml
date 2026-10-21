@@ -2,7 +2,7 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:24.8
     ports:
-      - "18123:8123"
+      - "127.0.0.1:18123:8123"
     environment:
       CLICKHOUSE_USER: demo
       CLICKHOUSE_PASSWORD: demo

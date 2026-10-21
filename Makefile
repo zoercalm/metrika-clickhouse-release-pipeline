@@ -6,7 +6,8 @@ up:            ## start a local ClickHouse
 
 install:       ## create a virtualenv and install the package
 	python3 -m venv .venv
-	$(PY) -m pip install -q -e ".[dev]"
+	$(PY) -m pip install -q -r requirements.lock
+	$(PY) -m pip install -q -e ".[dev]" --no-deps
 
 demo: up       ## publish, reconcile, check health
 	.venv/bin/rp release

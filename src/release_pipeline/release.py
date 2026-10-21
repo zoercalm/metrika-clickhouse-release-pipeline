@@ -242,15 +242,17 @@ def _open_release(client, db: str):
     return (pending[-1], plans[pending[-1]]) if pending else (None, None)
 
 
-def recover(client, cfg: Config | None = None) -> str | None:
+def recover(client, cfg: Config | None = None, *, writer_stopped: bool = False) -> str | None:
     """Finish an interrupted switch by comparing UUIDs. Never re-exchanges a finished step."""
     cfg = cfg or Config()
     db = cfg.database
     rid, detail = _open_release(client, db)
     if rid is None:
         if lock_exists(client, db):
-            client.command(f"DROP TABLE IF EXISTS {ident(db)}.{ident(LOCK_TABLE)}")
+            raise PipelineBusy("lock held without a recovery plan: inspect the writer; do not clear automatically")
         return None
+    if not writer_stopped:
+        raise PipelineBusy("stop the writer first, then explicitly confirm writer_stopped for recovery")
     build = detail["build"]
     for step in detail["plan"]:
         current = table_uuid(client, db, step["table"])

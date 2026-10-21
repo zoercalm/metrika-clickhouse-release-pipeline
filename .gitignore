@@ -6,3 +6,5 @@ dbt/target/
 dbt/logs/
 .env
 *.log
+
+.DS_Store

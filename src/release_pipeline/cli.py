@@ -29,7 +29,7 @@ def main(argv=None):
     r.add_argument("--lose-hits", type=int, default=0, help="demo: drop N hits on the last 2 days")
     r.add_argument("--crash-after", type=int, choices=(1, 2, 3), help="demo: crash after switching N tables")
     r.add_argument("--duplicate-visit", action="store_true", help="demo: feed a duplicate visit_id (dbt must reject)")
-    sub.add_parser("recover", help="finish an interrupted switch")
+    sub.add_parser("recover", help="finish an interrupted switch").add_argument("--writer-stopped", action="store_true", help="confirm the original writer is stopped")
     sub.add_parser("rollback", help="switch back to the previous release")
     sub.add_parser("reconcile", help="compare published data with the external totals")
     sub.add_parser("repair", help="reload days that reconcile found short")
@@ -45,7 +45,7 @@ def main(argv=None):
             send(f"release {rid} published")
             print(f"published release {rid}")
         elif args.cmd == "recover":
-            print("recovered", recover(client, cfg))
+            print("recovered", recover(client, cfg, writer_stopped=args.writer_stopped))
         elif args.cmd == "rollback":
             print("rolled back", rollback(client, cfg))
         elif args.cmd in ("reconcile", "repair"):

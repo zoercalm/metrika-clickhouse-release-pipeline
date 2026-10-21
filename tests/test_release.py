@@ -70,7 +70,7 @@ def test_interrupted_switch_is_recovered_without_swapping_back(client, cfg, sour
     with pytest.raises(PipelineBusy):  # nobody may write while the switch is uncertain
         run_release(client, other_source, *span(other_source), cfg)
 
-    recover(client, cfg)
+    recover(client, cfg, writer_stopped=True)
     recovered = totals(client, cfg)
     assert check(client, cfg)["ok"]
     # visits table and mart are from the same release: pageviews in mart == pageview hits
@@ -114,3 +114,12 @@ def test_bot_token_is_redacted():
     token = "123456789" + ":" + "FAKE" + "x" * 31  # built at runtime: not a real token
     assert token not in redact(f"HTTPError for https://api.telegram.org/bot{token}/sendMessage", token)
     assert token not in redact(f"leaked {token} somewhere")
+
+
+def test_recover_does_not_clear_an_active_lock(client, cfg):
+    from release_pipeline.release import ensure_schema, lock_exists
+    ensure_schema(client, cfg.database)
+    with PipelineLock(client, cfg.database):
+        with pytest.raises(PipelineBusy):
+            recover(client, cfg)
+        assert lock_exists(client, cfg.database)

@@ -25,7 +25,7 @@ Requirements: Docker, Python 3.10+.
 ```bash
 make install        # virtualenv + dependencies (includes dbt-clickhouse)
 make demo           # start ClickHouse, publish a release, reconcile, check health
-make test           # 11 tests against a real ClickHouse
+make test           # 12 tests against a real ClickHouse
 ```
 
 Scenarios to run by hand (`.venv/bin/rp --help`):
@@ -34,7 +34,7 @@ Scenarios to run by hand (`.venv/bin/rp --help`):
 |---|---|
 | `rp release` | Stage → full build → dbt build + tests → journal → switch |
 | `rp release --duplicate-visit` | A bad feed is rejected by dbt tests; production is untouched |
-| `rp release --crash-after 2` then `rp health` then `rp recover` | An interrupted switch holds the lock; recovery compares UUIDs and finishes only the missing step |
+| `rp release --crash-after 2` then `rp health` then `rp recover --writer-stopped` | An interrupted switch holds the lock; recovery compares UUIDs and finishes only the missing step |
 | `rp rollback` | Switch back to the previous release kept in `prev_<id>` |
 | `rp release --lose-hits 3` then `rp reconcile` then `rp repair` | A short export is caught against external totals and reloaded through the same gate |
 | `rp health` | Freshness and lock check; exit code 1 when stale (limit 26 h by default) |
@@ -87,3 +87,8 @@ This pattern comes from a real engagement. The case study (anonymised) is on my
 [omdigital.net](https://omdigital.net). I am Serhii Yashchuk, a marketing data engineer.
 
 MIT licensed.
+
+## Operational limits of this demo
+Stop the original writer before using `rp recover --writer-stopped`. Recovery refuses to clear a lock with no prepared plan. A complete mart query sees an old or new mart; reads joining raw tables during the multi-table switch can see mixed versions. First publication has no previous mart.
+
+Rollback currently demonstrates a successful reverse switch only; it is not crash-safe and the health snapshot continues to describe the latest publish, not the rollback. Finalisation interruptions outside the three injected switch points are not covered. Do not deploy this teaching implementation as a production release manager.

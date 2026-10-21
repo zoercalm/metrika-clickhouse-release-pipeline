@@ -13,7 +13,7 @@ def client():
         c = connect()
         c.command("SELECT 1")
     except Exception as exc:  # pragma: no cover
-        pytest.skip(f"ClickHouse is not reachable: {exc}")
+        pytest.fail(f"ClickHouse is not reachable: {exc}")
     return c
 
 
