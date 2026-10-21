@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#4a6fa5"/></marker>
+    <style>
+      .box{fill:#f4f6fa;stroke:#9fb1c9;stroke-width:1.5}
+      .hot{fill:#e8f6ee;stroke:#5aa77b;stroke-width:1.5}
+      .t{font-size:15px;font-weight:700;fill:#172333}
+      .s{font-size:12px;fill:#4d5968}
+      .l{stroke:#4a6fa5;stroke-width:1.6;fill:none;marker-end:url(#a)}
+      .d{stroke:#4a6fa5;stroke-width:1.4;fill:none;stroke-dasharray:5 4;marker-end:url(#a)}
+    </style>
+  </defs>
+  <rect width="960" height="420" fill="#ffffff"/>
+  <text x="24" y="30" class="t" font-size="18">Collect, build, test, then switch</text>
+
+  <rect class="box" x="24" y="60" width="170" height="80" rx="10"/>
+  <text x="40" y="92" class="t">Logs API</text><text x="40" y="114" class="s">visits and hits (synthetic)</text>
+  <rect class="box" x="244" y="60" width="170" height="80" rx="10"/>
+  <text x="260" y="92" class="t">Stage</text><text x="260" y="114" class="s">stage_&lt;id&gt; database</text>
+  <rect class="box" x="464" y="60" width="200" height="80" rx="10"/>
+  <text x="480" y="92" class="t">Build database</text><text x="480" y="114" class="s">history + new range, full copy</text>
+  <rect class="hot" x="714" y="60" width="220" height="80" rx="10"/>
+  <text x="730" y="92" class="t">dbt build + tests</text><text x="730" y="114" class="s">gate: fail = nothing is published</text>
+
+  <path class="l" d="M194 100H244"/><path class="l" d="M414 100H464"/><path class="l" d="M664 100H714"/>
+
+  <rect class="box" x="464" y="190" width="200" height="70" rx="10"/>
+  <text x="480" y="220" class="t">Release journal</text><text x="480" y="242" class="s">plan: table, old uuid, new uuid</text>
+  <path class="l" d="M824 140V225H664"/>
+
+  <text x="206" y="214" class="s">one writer: lock table, no TTL</text>
+
+  <rect class="hot" x="24" y="190" width="170" height="70" rx="10"/>
+  <text x="40" y="220" class="t">Switch tables</text><text x="40" y="242" class="s">visits, hits, then the mart</text>
+  <path class="l" d="M464 225H194"/>
+
+  <rect class="box" x="24" y="310" width="170" height="70" rx="10"/>
+  <text x="40" y="340" class="t">Dashboard reads</text><text x="40" y="362" class="s">whole old or whole new</text>
+  <path class="l" d="M109 260V310"/>
+
+  <rect class="box" x="244" y="310" width="200" height="70" rx="10"/>
+  <text x="260" y="340" class="t">prev_&lt;id&gt; database</text><text x="260" y="362" class="s">kept for rollback</text>
+  <path class="d" d="M194 225C230 280 240 300 244 330"/>
+
+  <rect class="box" x="494" y="310" width="210" height="70" rx="10"/>
+  <text x="510" y="340" class="t">Health snapshot</text><text x="510" y="362" class="s">read by an independent check</text>
+  <rect class="box" x="754" y="310" width="180" height="70" rx="10"/>
+  <text x="770" y="340" class="t">Telegram</text><text x="770" y="362" class="s">results and failures</text>
+  <path class="d" d="M599 260V310"/><path class="d" d="M704 345H754"/>
+  <text x="24" y="406" class="s">Solid: data. Dashed: monitoring, rollback and alerts. Illustration of the demo in this repository.</text>
+</svg>

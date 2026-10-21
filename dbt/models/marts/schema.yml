@@ -1,0 +1,16 @@
+version: 2
+
+models:
+  - name: visits_hits_flat
+    description: One row per visit, with hit counts and robot flags.
+    columns:
+      - name: visit_id
+        tests: [unique, not_null]
+      - name: date
+        tests: [not_null]
+      - name: device
+        tests:
+          - accepted_values:
+              values: ["desktop", "mobile", "tablet"]
+      - name: hit_count
+        tests: [not_null]

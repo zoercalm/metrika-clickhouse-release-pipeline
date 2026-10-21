@@ -1,0 +1,13 @@
+release_demo:
+  target: build
+  outputs:
+    build:
+      type: clickhouse
+      host: "{{ env_var('CH_HOST', 'localhost') }}"
+      port: "{{ env_var('CH_PORT', '18123') | as_number }}"
+      user: "{{ env_var('CH_USER', 'demo') }}"
+      password: "{{ env_var('CH_PASSWORD', 'demo') }}"
+      # The release pipeline points dbt at a fresh build database for every release.
+      schema: "{{ env_var('DBT_SCHEMA') }}"
+      secure: false
+      threads: 2

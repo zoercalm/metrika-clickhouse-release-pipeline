@@ -1,0 +1,30 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: "{{ env_var('DBT_SCHEMA') }}"
+    tables:
+      - name: visits
+        columns:
+          - name: visit_id
+            tests: [unique, not_null]
+          - name: counter_id
+            tests: [not_null]
+          - name: client_id
+            tests: [not_null]
+          - name: date
+            tests: [not_null]
+      - name: hits
+        columns:
+          - name: hit_id
+            tests: [unique, not_null]
+          - name: visit_id
+            tests:
+              - not_null
+              - relationships:
+                  to: source('raw', 'visits')
+                  field: visit_id
+          - name: hit_type
+            tests:
+              - accepted_values:
+                  values: ["pageview", "event"]
